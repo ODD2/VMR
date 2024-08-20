@@ -6,14 +6,14 @@ from multiprocessing import Pool
 from scenedetect import detect, AdaptiveDetector, split_video_ffmpeg
 
 
-vids = glob("/scratch4/users/od/YTCharts/v3/*/*.mp4")
+vids = glob("/scratch4/users/od/YTCharts/videos/*.mp4")
 print(vids)
 
 
 def runner(video_file):
 
     try:
-        json_file = video_file.replace(".mp4", ".json")
+        json_file = video_file.replace(".mp4", ".json").replace("videos", "metas")
         scene_list = detect(video_file, AdaptiveDetector())
         scenes = len(scene_list)
         with open(json_file, "r") as f:

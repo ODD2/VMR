@@ -37,7 +37,20 @@ def fetch_frames(video_path, duration, offset=0, num_frames=10, transform=(lambd
 
 class MusicVideoDataset(Dataset):
 
-    def __init__(self, split, frames=16, duration=30, t_res=5, px=336, portion=1.0, offset_ratio=0.2, reverse=False, with_audio=False, debug=False, dts_ver="v3"):
+    def __init__(
+        self,
+        split,
+        frames=16,
+        duration=30,
+        t_res=5,
+        px=336,
+        portion=1.0,
+        offset_ratio=0.2,
+        reverse=False,
+        with_audio=False,
+        debug=False,
+        dts_ver="v1"
+    ):
         super().__init__()
         self.split = split
         self.frames = frames
@@ -68,157 +81,6 @@ class MusicVideoDataset(Dataset):
         return len(self.entity_list)
 
     def __getitem__(self, index):
-        try:
-            ent_name = self.entity_list[index]
-
-            # load meta
-            with open(os.path.join(self.major_path, f"{ent_name}.json")) as f:
-                ent_meta = json.load(f)
-
-            if (ent_meta["duration"] < self.duration):
-                raise Exception(f"entity duration is less than {self.duration} seconds")
-
-            # determine interval
-            if (self.split == "train"):
-                beg_time = np.random.randint(0, ent_meta["duration"] - self.duration + 1)
-            else:
-                beg_time = np.random.RandomState(index + 1019).randint(0, ent_meta["duration"] - self.duration + 1)
-
-            end_time = beg_time + self.duration
-
-            # load frames
-            video_path = os.path.join(self.major_path, f"{ent_name}.mp4")
-            frames = fetch_frames(video_path, self.duration, beg_time, self.frames, self.img_preprocess)
-
-            # load analysis
-            # # check transition
-            with open(os.path.join(self.analy_path, f"{ent_name}.json")) as f:
-                analy_data = json.load(f)
-
-            label = 0
-            for seg in analy_data["segments"]:
-                if (seg["start"] <= beg_time) and (beg_time < seg["end"]):
-                    if (seg["end"] <= end_time):
-                        label = min(int((seg["end"] - beg_time) / self.duration * self.t_res), self.t_res - 1) + 1
-                    break
-
-            return dict(
-                frames=frames,
-                labels=torch.tensor(label)
-            )
-
-        except Exception as e:
-            print(e, index)
-            return self.__getitem__(np.random.randint(0, len(self)))
-
-
-class MusicVideoDatasetV2(MusicVideoDataset):
-
-    def __getitem__(self, index):
-        offset_unit = self.duration // 10
-        shift_unit = (self.duration - offset_unit * 2) / self.t_res
-
-        retries = -1
-        while (retries < 3):
-            retries += 1
-            try:
-                if (self.split == "train"):
-                    __rng = np.random
-                else:
-                    __rng = np.random.RandomState(index + 1019)
-
-                ent_name = self.entity_list[index]
-
-                # load meta
-                with open(os.path.join(self.major_path, f"{ent_name}.json")) as f:
-                    ent_meta = json.load(f)
-
-                if (ent_meta["duration"] < self.duration):
-                    raise Exception(f"entity duration is less than { self.duration} seconds")
-
-                # load analysis
-                with open(os.path.join(self.analy_path, f"{ent_name}.json")) as f:
-                    analy_data = json.load(f)
-
-                segments = analy_data["segments"]
-                segments = concat_segments(segments)
-
-                # determine transition segment
-                segment_idx = [i + 1 for i in range(len(segments) - 1)]
-                label_idx = [i for i in range(self.t_res)]
-
-                __rng.shuffle(segment_idx)
-                __rng.shuffle(label_idx)
-
-                for s_idx in segment_idx:
-                    s_beg = segments[s_idx - 1]["start"]
-                    s_end = segments[s_idx]["end"]
-                    s_mid = segments[s_idx]["start"]
-
-                    if (s_end - s_beg < self.duration):
-                        continue
-
-                    # select label
-                    for l_idx in label_idx:
-                        # determine clip interval
-                        clip_beg = s_mid - (offset_unit + shift_unit * ((l_idx + 1) - 0.5))
-                        clip_end = clip_beg + self.duration
-                        # check clip within segment interval
-                        if (clip_beg < s_beg) or (clip_end > s_end):
-                            continue
-
-                        # load frames
-                        video_path = os.path.join(self.major_path, f"{ent_name}.mp4")
-                        frames = fetch_frames(video_path, clip_end - clip_beg, clip_beg, self.frames, self.img_preprocess)
-                        # frames = None
-                        if (self.with_audio):
-                            audio_path = os.path.join(self.major_path, f"{ent_name}.mp3")
-                            audio, _ = librosa.load(audio_path, sr=44100, offset=clip_beg, duration=self.duration)
-                        else:
-                            audio = torch.tensor([])
-
-                        if (self.debug):
-                            print("origin segments:")
-                            for i, seg in enumerate(analy_data["segments"]):
-                                print(i, seg)
-                            print("process segments:")
-                            for i, seg in enumerate(segments):
-                                print(i, seg)
-                            print(s_idx, l_idx)
-                            print(s_beg, s_mid, s_end)
-                            print(clip_beg, s_mid, clip_end)
-                            print(video_path)
-                            if (self.with_audio):
-                                print(audio_path)
-
-                        return dict(
-                            frames=frames,
-                            labels=torch.tensor(l_idx),
-                            audio=audio
-                        )
-
-                raise Exception("no valid segment found")
-            except Exception as e:
-                # raise e
-                # print("segments:")
-                # for i, seg in enumerate(analy_data["segments"]):
-                #     print(i, seg)
-                # print("segments:")
-                # for i, seg in enumerate(segments):
-                #     print(i, seg)
-                # print(s_idx, l_idx)
-                # print(s_beg, s_mid, s_end)
-                # print(clip_beg, clip_end)
-
-                print(e, index)
-                index = np.random.randint(0, len(self))
-
-        raise NotImplementedError()
-
-
-class MusicVideoDatasetV3(MusicVideoDataset):
-
-    def __getitem__(self, index, with_info=False):
         if (self.split == "train"):
             __rng = np.random
         else:
@@ -333,22 +195,13 @@ class MusicVideoDatasetV3(MusicVideoDataset):
                     if (self.with_audio):
                         print(audio_path)
 
-                if (with_info):
-                    extra = dict(
-                        timestamps=(clip_beg, s_mid, clip_end),
-                        video_path=video_path
-                    )
-                else:
-                    extra = {}
-
                 return dict(
                     frames=frames,
                     labels=torch.tensor(label),
                     audio=audio,
                     idx=index,
                     timestamps=torch.tensor([clip_beg, s_mid, clip_end]),
-                    video_path=video_path,
-                    ** extra
+                    video_path=video_path
                 )
 
             except Exception as e:
@@ -356,6 +209,58 @@ class MusicVideoDatasetV3(MusicVideoDataset):
                 index = __rng.randint(0, len(self))
 
         raise NotImplementedError()
+
+
+class FullVideoDataset(Dataset):
+
+    def __init__(self, frames=32, px=336, portion=1.0):
+        super().__init__()
+        self.frames = frames
+        self.video_folder = "/scratch4/users/od/YTCharts/videos/"
+        self.meta_folder = self.video_folder.replace("videos", "metas")
+
+        self.entity_list = sorted(
+            [
+                os.path.basename(file)[:-4]
+                for file in glob(f"{self.video_folder}/*.mp4")
+            ]
+        )
+
+        self.entity_list = self.entity_list[:int(len(self.entity_list) * portion)]
+
+        self.img_preprocess = torchvision.transforms.Compose([
+            torchvision.transforms.Resize(
+                (px, px),
+                interpolation=torchvision.transforms.InterpolationMode.BICUBIC,
+                antialias=True
+            )
+        ])
+
+    def __len__(self):
+        return len(self.entity_list)
+
+    def __getitem__(self, index):
+        try:
+            ent_name = self.entity_list[index]
+            video_path = os.path.join(self.video_folder, f"{ent_name}.mp4")
+            meta_path = os.path.join(self.meta_folder, f"{ent_name}.json")
+
+            # load meta
+            with open(meta_path) as f:
+                ent_meta = json.load(f)
+
+            # load frames
+            frames = fetch_frames(video_path, 60, ent_meta["duration"] // 2 - 30, self.frames, self.img_preprocess)
+
+            return dict(
+                frames=frames,
+                video_path=video_path,
+                meta_path=meta_path
+            )
+
+        except Exception as e:
+            print(e, index)
+            return self.__getitem__(np.random.randint(0, len(self)))
 
 
 if __name__ == "__main__":
@@ -373,7 +278,7 @@ if __name__ == "__main__":
         torch.backends.cudnn.benchmark = False
         torch.use_deterministic_algorithms(True, warn_only=True)
 
-    loader = DataLoader(MusicVideoDatasetV3("test", duration=10, frames=10), batch_size=4, num_workers=16, shuffle=True, pin_memory=False)
+    loader = DataLoader(MusicVideoDataset("test", duration=10, frames=10), batch_size=4, num_workers=16, shuffle=True, pin_memory=False)
     for i in tqdm(loader):
         pass
     # for i in tqdm(range(len(dts))):
