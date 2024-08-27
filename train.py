@@ -63,7 +63,8 @@ def parse_args(args=None):
 
     parser.add_argument("--proj_mode", type=str, default="v1")
     parser.add_argument("--inference", action="store_true")
-    # parser.add_argument("--scheduler", type=str, default="none")
+
+    parser.add_argument("--dts_ver", type=str, default="v1")
 
     parser = deepspeed.add_config_arguments(parser)
     parser.add_argument("--local_rank", type=int, default="")
@@ -595,7 +596,8 @@ def main():
                 duration=args.duration,
                 portion=args.test_portion,
                 offset_ratio=args.offset_ratio,
-                reverse=True
+                reverse=True,
+                dts_ver=args.dts_ver
             ),
             route=deepspeed.runtime.constants.ROUTE_EVAL
         )
@@ -686,6 +688,7 @@ def main():
                 duration=args.duration,
                 portion=args.train_portion,
                 offset_ratio=args.offset_ratio,
+                dts_ver=args.dts_ver
             )
         )
 
