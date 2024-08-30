@@ -3,7 +3,7 @@ import json
 
 
 SPLIT = "test"
-VER_NAME = os.path.join("v1", SPLIT)
+VER_NAME = os.path.join("v5", SPLIT)
 BASE_FOLDER = "/scratch4/users/od/YTCharts"
 SPLIT_FILE = f"/scratch4/users/od/YTCharts/splits/{SPLIT}.txt"
 VER_FOLDER = os.path.join(BASE_FOLDER, VER_NAME)
@@ -37,8 +37,8 @@ def main():
         with open(get_meta_path(id)[1], "r") as f:
             try:
                 meta = json.load(f)
-                if meta["scenes"] >= 20:
-                    _ids.append(id)
+                # if meta["is_story"]:
+                _ids.append(id)
             except Exception as e:
                 print(id, e)
     ids = _ids
